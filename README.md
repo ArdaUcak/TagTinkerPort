@@ -33,17 +33,40 @@ advanced options, set Wi-Fi and enable SSH.
 
 ```bash
 sudo apt update
-sudo apt install -y pigpio python3-pigpio python3-pil
+sudo apt install -y pigpio python3-pigpio python3-pil git
 sudo systemctl enable --now pigpiod
 ```
 
-**3. Copy this folder onto the Pi** (from your Windows machine):
+**3. Run pigpiod at 1 µs sample rate** — the default 5 µs rounding garbles
+the PP4 symbol gaps and some tags refuse to decode. Drop in an override:
 
-```powershell
-scp -r "C:\Users\horse\OneDrive\Masaüstü\TagTinkerPort" pi@<pi-ip>:~/
+```bash
+sudo mkdir -p /etc/systemd/system/pigpiod.service.d
+echo -e "[Service]\nExecStart=\nExecStart=/usr/bin/pigpiod -l -s 1" \
+  | sudo tee /etc/systemd/system/pigpiod.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart pigpiod
 ```
 
-**4. Wire up the IR LED** — see [`wiring.md`](wiring.md). Five connections:
+**4. Free PWM0 from the audio driver.** Raspberry Pi OS binds PWM0/PWM1 to
+the on-board audio by default, which conflicts with the IR carrier on
+GPIO 18:
+
+```bash
+sudo sed -i 's/^dtparam=audio=on/dtparam=audio=off/' /boot/firmware/config.txt
+sudo reboot
+```
+
+(If `/boot/firmware/config.txt` doesn't exist, try `/boot/config.txt` on
+older Pi OS images.)
+
+**5. Copy this folder onto the Pi.** Either `git clone` it on the Pi itself,
+or from your local machine:
+
+```bash
+scp -r ./TagTinkerPort pi@<pi-ip>:~/
+```
+
+**6. Wire up the IR LED** — see [`wiring.md`](wiring.md). Five connections:
 
 ```
 Pi pin 12 (GPIO 18) ── 100 Ω ── IR LED anode
@@ -68,6 +91,29 @@ python3 examples/send_image.py 21099601234567890 logo.png
 
 Point the IR LED at the tag from within ~30 cm.
 
+## Optional: phone-friendly web UI
+
+`app.py` is a single-file Flask app that lets you upload photos from your
+phone and pick which tag to push them to. `setup_hotspot.sh` turns the Pi
+into its own WPA2-protected Wi-Fi access point so you don't need a router:
+
+```bash
+sudo bash setup_hotspot.sh
+sudo reboot
+```
+
+The script detects whether your Pi uses NetworkManager (Bookworm and newer)
+or dhcpcd+hostapd (Bullseye and older) and configures the right one.
+
+Default Wi-Fi password is **`12341234`** (WPA2 forbids the 4-char `1234`).
+Change it from the **Wi-Fi tab** in the web UI once you're connected; the
+new password takes effect after a 2-second delay so the browser can show
+the confirmation before your phone gets kicked off.
+
+The current credentials live in `hotspot.credentials` (root-readable only,
+in the project folder). Connect your phone to the `TagTinker` SSID, then
+open `http://192.168.4.1`.
+
 ## Troubleshooting
 
 - **Tag doesn't respond to anything** — battery's probably dead. ESL tags use a
@@ -75,9 +121,14 @@ Point the IR LED at the tag from within ~30 cm.
 - **`pigpio daemon not running`** — `sudo systemctl start pigpiod`.
 - **`unknown tag type`** — your tag's type code isn't in `profiles.py`. Pass
   `--width` and `--height` explicitly, or add it to the profile table.
-- **Tag wakes but image looks garbled** — try `--data-repeats 10` for more
-  reliable transmission, and check you're pointing straight at the IR receiver
-  on the tag (usually a small dark window near the edge).
+- **Tag wakes but image looks garbled** — most often a timing issue. Confirm
+  `pigpiod` is running with `-s 1` (`ps ax | grep pigpiod`), then try
+  `--data-repeats 10` for more transmission redundancy. Also check you're
+  pointing straight at the IR receiver on the tag (a small dark window near
+  the edge).
+- **Carrier appears dead even though the gate pulses** — the audio driver is
+  probably still holding PWM0. Re-check that `dtparam=audio=off` is in
+  `/boot/firmware/config.txt` and reboot.
 
 ## What's in here
 

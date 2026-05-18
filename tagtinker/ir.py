@@ -13,6 +13,19 @@ On the Pi we split the same job across two GPIO pins:
 
 An external transistor ANDs the two together so the IR LED only emits
 when both are HIGH. See wiring.md.
+
+Runtime requirements on the Pi:
+
+  - **pigpiod must run with `-s 1`** (1 µs sample rate). The default 5 µs
+    sample rate rounds the 121/181/242 µs symbol gaps down to 120/180/240,
+    introducing 0.4–0.8 % timing error that some tags decode unreliably.
+    `setup_hotspot.sh` installs a systemd drop-in that sets this; if you
+    run pigpiod manually use: `sudo pigpiod -s 1`.
+  - **The PWM0 peripheral conflicts with the on-board audio driver.**
+    Raspberry Pi OS ships with `dtparam=audio=on`, which binds PWM0/PWM1
+    to bcm2835-audio. Disable it in /boot/firmware/config.txt before
+    transmitting, or move the carrier to GPIO 13/19 (PWM1) which is also
+    affected but at least lets you pick a free channel.
 """
 from __future__ import annotations
 
@@ -71,7 +84,7 @@ class TagTinkerIR:
     ) -> None:
         if not pi.connected:
             raise TagTinkerIRError(
-                "pigpio daemon is not running. Start it with: sudo pigpiod"
+                "pigpio daemon is not running. Start it with: sudo pigpiod -s 1"
             )
         if carrier_gpio == gate_gpio:
             raise ValueError("carrier_gpio and gate_gpio must differ")

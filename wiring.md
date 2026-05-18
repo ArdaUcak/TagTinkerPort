@@ -11,27 +11,24 @@ resolution, so we use two GPIO pins ANDed by a single NPN transistor:
 ## Schematic (single NPN transistor, ~3 parts)
 
 ```
-                  +---------- GPIO 18 (pin 12, BCM 18) — carrier PWM @ 1.255 MHz
-                  |
-                  R1 = 100 Ω    (current-limit for the IR LED, ~20 mA peak)
-                  |
-                  =  IR LED   (anode top, cathode bottom)
-                  |
-                  +-------+
-                          |
-                          C (collector)
-                          |
-                         |/
-                  Q1 ----| 2N3904 / 2N2222 / BC547   (any small-signal NPN)
-                         |\
-                          |
-                          E (emitter)
-                          |
-                         GND
-                          ^
-                          |
-                          R2 = 1 kΩ ───── GPIO 17 (pin 11, BCM 17) — gate
-                                          (R2 sits between GPIO 17 and the base)
+                                  +---- GPIO 18 (pin 12, BCM 18)
+                                  |     carrier PWM @ 1.255 MHz
+                                  |
+                                 R1 = 100 Ω   (current-limit, ~20 mA peak)
+                                  |
+                                  ▼   IR LED (anode top, cathode bottom)
+                                 ───
+                                  |
+                                  |
+                              C (collector)
+                                  |
+                                 |/
+   GPIO 17 ── R2 = 1 kΩ ──── B ──|   Q1   2N3904 / 2N2222 / BC547
+  (pin 11, BCM 17)               |\       (any small-signal NPN)
+   gate                            |
+                              E (emitter)
+                                  |
+                                 GND (pin 9)
 ```
 
 **Why this works:**

@@ -63,17 +63,35 @@ def is_barcode_valid(barcode: str) -> bool:
     return isinstance(barcode, str) and len(barcode) == 17 and barcode.isdigit()
 
 
+BROADCAST_PLID = bytes(4)
+
+
+def is_addressable_barcode(barcode: str) -> bool:
+    """True if `barcode` is well-formed AND decodes to a non-broadcast PLID.
+
+    A barcode whose digits[2..12) are all zero produces PLID 00 00 00 00,
+    which is the protocol's broadcast address. We disallow that for any
+    "address one specific tag" path because it's almost always a typo and
+    quietly retargets every tag in IR range.
+    """
+    if not is_barcode_valid(barcode):
+        return False
+    return barcode_to_plid(barcode) != BROADCAST_PLID
+
+
 def barcode_to_plid(barcode: str) -> bytes:
     """Decode a 17-character barcode into the 4-byte PLID (LSB first).
 
     Mirrors tagtinker_barcode_to_plid: bytes[2..7) + bytes[7..12) form a
     pair of 5-digit groups, packed as (a << 16) | b and stored little-endian.
+    The upstream packs into a uint32_t, so high bits beyond 32 are dropped —
+    we mask to 32 bits here to match.
     """
     if not is_barcode_valid(barcode):
         raise ValueError("barcode must be 17 numeric characters")
     a = int(barcode[2:7])
     b = int(barcode[7:12])
-    id_val = (a << 16) | b
+    id_val = ((a << 16) | b) & 0xFFFFFFFF
     return bytes([
         id_val & 0xFF,
         (id_val >> 8) & 0xFF,

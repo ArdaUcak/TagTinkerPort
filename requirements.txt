@@ -1,2 +1,11 @@
+# On the Pi, prefer the apt packages — they pair with the running pigpiod
+# daemon version and play nicely with PEP 668's externally-managed Python:
+#
+#   sudo apt install -y python3-pigpio python3-pil
+#   pip3 install --break-system-packages 'flask>=3.0'
+#
+# These pip pins are for venv-based dev work on a non-Pi machine, where the
+# protocol/profile modules can be unit-tested without pigpiod present.
 pigpio>=1.78
 Pillow>=10.0
+flask>=3.0

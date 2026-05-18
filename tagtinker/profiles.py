@@ -37,6 +37,10 @@ class TagProfile:
         return self.color in (TagColor.RED, TagColor.YELLOW)
 
 
+# Multiple type_codes mapping to the same model_name (e.g. 1317/1322, or
+# 1328/1370/1627/1628) are intentional — they mirror the upstream profile
+# table where different production SKUs share a display panel. Do not
+# deduplicate without cross-checking tagtinker_proto.c.
 _PROFILE_TABLE: tuple[TagProfile, ...] = (
     TagProfile(1206, 0, 0, TagKind.SEGMENT, TagColor.MONO, "Continuum E2 HCS", 0),
     TagProfile(1207, 0, 0, TagKind.SEGMENT, TagColor.MONO, "Continuum E2 HCN", 4),

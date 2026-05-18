@@ -5,6 +5,7 @@ This port reuses the wire protocol and timing constants from the C source
 and substitutes pigpio for the Flipper's TIM1+DWT hardware path.
 """
 from .proto import (
+    BROADCAST_PLID,
     IMAGE_DATA_BYTES_PER_FRAME,
     MAX_FRAME_SIZE,
     ImagePayload,
@@ -14,6 +15,7 @@ from .proto import (
     crc16,
     encode_image_payload,
     encode_planes_payload,
+    is_addressable_barcode,
     is_barcode_valid,
     make_addressed_frame,
     make_broadcast_debug_frame,
@@ -26,6 +28,7 @@ from .proto import (
 from .profiles import TagColor, TagKind, TagProfile, all_profiles, lookup_profile
 
 __all__ = [
+    "BROADCAST_PLID",
     "IMAGE_DATA_BYTES_PER_FRAME",
     "MAX_FRAME_SIZE",
     "ImagePayload",
@@ -39,6 +42,7 @@ __all__ = [
     "crc16",
     "encode_image_payload",
     "encode_planes_payload",
+    "is_addressable_barcode",
     "is_barcode_valid",
     "lookup_profile",
     "make_addressed_frame",
@@ -54,9 +58,12 @@ __all__ = [
 def __getattr__(name: str):
     # Lazy import so that proto/profile tests can run on dev machines
     # without pigpio installed.
-    if name in ("TagTinkerIR", "TagTinkerIRError"):
-        from .ir import TagTinkerIR, TagTinkerIRError
-        return {"TagTinkerIR": TagTinkerIR, "TagTinkerIRError": TagTinkerIRError}[name]
+    if name == "TagTinkerIR":
+        from .ir import TagTinkerIR
+        return TagTinkerIR
+    if name == "TagTinkerIRError":
+        from .ir import TagTinkerIRError
+        return TagTinkerIRError
     if name == "send_full_image":
         from .sequence import send_full_image
         return send_full_image

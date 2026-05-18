@@ -37,3 +37,7 @@ htmlcov/
 
 # OneDrive scratch
 *.tmp
+
+# Runtime artifacts created on the Pi
+tags.json
+hotspot.credentials
