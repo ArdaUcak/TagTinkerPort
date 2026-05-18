@@ -17,13 +17,11 @@ sudo systemctl enable --now pigpiod
 
 ## 4. Get the code onto the Pi
 
-Since the repo is private, easiest is to copy from your Windows machine:
-
-```powershell
-scp -r "C:\Users\horse\OneDrive\Masaüstü\TagTinkerPort" pi@<pi-ip>:~/
+```bash
+sudo apt install -y git
+git clone https://github.com/ArdaUcak/TagTinkerPort.git
+cd TagTinkerPort
 ```
-
-Or clone with `gh auth login` on the Pi first, then `gh repo clone ArdaUcak/TagTinkerPort`.
 
 ## 5. Wire it up
 
