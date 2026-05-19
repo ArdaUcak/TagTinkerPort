@@ -10,6 +10,8 @@ resolution, so we use two GPIO pins ANDed by a single NPN transistor:
 
 ## Schematic (single NPN transistor, ~3 parts)
 
+![Schematic](schematic.png)
+
 ```
                                   +---- GPIO 18 (pin 12, BCM 18)
                                   |     carrier PWM @ 1.255 MHz
