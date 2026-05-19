@@ -66,7 +66,10 @@ or from your local machine:
 scp -r ./TagTinkerPort pi@<pi-ip>:~/
 ```
 
-**6. Wire up the IR LED** — see [`wiring.md`](wiring.md). Five connections:
+**6. Wire up the IR LED** — see [`wiring.md`](wiring.md) for the full
+schematic and parts list. Five connections:
+
+![Schematic](schematic.png)
 
 ```
 Pi pin 12 (GPIO 18) ── 100 Ω ── IR LED anode
@@ -134,7 +137,7 @@ open `http://192.168.4.1`.
 
 - `tagtinker/` — the library: protocol, IR driver, sequencing, rendering.
 - `examples/` — runnable CLIs for ping / text / image.
-- `wiring.md` — schematic.
+- `wiring.md` + `schematic.png` — wiring schematic.
 
 ## What's not in here
 
