@@ -5,7 +5,9 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import pwd
 import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -177,6 +179,87 @@ def _restart_wifi(ssid: str) -> None:
         )
 
 
+# ---------- client-mode switching ----------
+
+def _list_wifi_connection_names() -> list[str]:
+    """All 802-11-wireless NM connection names, in NM's order."""
+    if shutil.which("nmcli") is None:
+        return []
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return []
+    names = []
+    for line in result.stdout.splitlines():
+        # -t output is colon-separated; nmcli escapes literal colons in
+        # values as "\:". rpartition gets us TYPE off the end safely.
+        head, sep, ctype = line.rpartition(":")
+        if not sep:
+            continue
+        if ctype == "802-11-wireless":
+            names.append(head.replace("\\:", ":"))
+    return names
+
+
+def _connection_field(name: str, field: str) -> str | None:
+    """Single NM connection field via nmcli, or None if it can't be read."""
+    try:
+        result = subprocess.run(
+            ["nmcli", "-t", "-f", field, "connection", "show", name],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    for line in result.stdout.splitlines():
+        _, sep, val = line.partition(":")
+        if sep:
+            return val
+    return None
+
+
+def _find_client_wifi() -> dict | None:
+    """Locate a non-AP Wi-Fi connection saved on the Pi.
+
+    On Bookworm Pi OS, the Pi-Imager-configured Wi-Fi is stored as an NM
+    connection (usually named "preconfigured"). Returns {name, ssid} or
+    None if no such connection exists.
+    """
+    info = _load_wifi_info()
+    ap_name = info["ssid"] if info else None
+    for name in _list_wifi_connection_names():
+        if name == ap_name:
+            continue
+        mode = _connection_field(name, "802-11-wireless.mode") or ""
+        if mode == "ap":
+            continue
+        ssid = _connection_field(name, "802-11-wireless.ssid") or name
+        return {"name": name, "ssid": ssid}
+    return None
+
+
+def _ssh_user() -> str:
+    """The likely SSH login user — first UID-1000 account, falling back to 'pi'."""
+    try:
+        return pwd.getpwuid(1000).pw_name
+    except KeyError:
+        return "pi"
+
+
+def _switch_to_client(client_name: str, ap_name: str) -> None:
+    """Drop the AP and bring up the client connection. Fire-and-forget."""
+    subprocess.run(
+        ["nmcli", "connection", "down", ap_name],
+        check=False, capture_output=True, text=True, timeout=15,
+    )
+    subprocess.run(
+        ["nmcli", "connection", "up", client_name],
+        check=False, capture_output=True, text=True, timeout=30,
+    )
+
+
 # ---------- routes ----------
 
 @app.route("/")
@@ -302,6 +385,67 @@ def wifi_password():
     })
 
 
+@app.route("/wifi/client-info", methods=["GET"])
+def wifi_client_info():
+    info = _load_wifi_info()
+    if info is None:
+        return jsonify({
+            "available": False,
+            "error": "Hotspot not configured — run setup_hotspot.sh first",
+        })
+    if not _network_manager_active():
+        return jsonify({
+            "available": False,
+            "error": "NetworkManager not active — client-mode switch requires NM",
+        })
+    client = _find_client_wifi()
+    if client is None:
+        return jsonify({
+            "available": False,
+            "error": (
+                "No client Wi-Fi configured on this Pi. Re-flash with "
+                "Pi Imager's Wi-Fi settings, or add an NM connection manually."
+            ),
+        })
+    return jsonify({
+        "available": True,
+        "ssid": client["ssid"],
+        "hostname": socket.gethostname(),
+        "ssh_user": _ssh_user(),
+        "ap_name": info["ssid"],
+    })
+
+
+@app.route("/wifi/mode", methods=["POST"])
+def wifi_mode():
+    data = request.get_json(silent=True) or {}
+    mode = data.get("mode")
+    if mode != "client":
+        return jsonify({"ok": False, "error": "mode must be 'client'"}), 400
+    if not _network_manager_active():
+        return jsonify({"ok": False, "error": "NetworkManager not active"}), 400
+    info = _load_wifi_info()
+    if info is None:
+        return jsonify({"ok": False, "error": "Hotspot not configured"}), 400
+    client = _find_client_wifi()
+    if client is None:
+        return jsonify({"ok": False, "error": "No client Wi-Fi configured on this Pi"}), 400
+
+    ap_name = info["ssid"]
+    # Same 2 s delay trick as the password change — let the response flush
+    # before we drop the AP and lock the browser out.
+    threading.Timer(2.0, _switch_to_client, args=(client["name"], ap_name)).start()
+
+    return jsonify({
+        "ok": True,
+        "message": (
+            f"Switching in 2 seconds. The Pi will leave '{ap_name}' and "
+            f"join '{client['ssid']}'. To get the hotspot back, ssh in "
+            f"and run:  sudo nmcli connection up {ap_name}"
+        ),
+    })
+
+
 @app.route("/send", methods=["POST"])
 def send():
     global _status
@@ -421,6 +565,8 @@ select,input[type=text],input[type=password]{width:100%;padding:11px 12px;border
 .btn-del{background:#2a0d0d;color:#f87171;border:none;border-radius:6px;padding:4px 9px;font-size:.78rem;cursor:pointer;flex-shrink:0}
 .toggle{font-size:.85rem;color:#555;cursor:pointer;user-select:none;margin-bottom:10px}
 .hidden{display:none}
+.divider{height:1px;background:#222;margin:18px 0 12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem;color:#ccc;margin-top:4px;word-break:break-all}
 </style>
 </head>
 <body>
@@ -457,6 +603,12 @@ select,input[type=text],input[type=password]{width:100%;padding:11px 12px;border
   <label class="show-pw"><input type="checkbox" id="wifiShow"> show password</label>
   <button class="btn btn-add" id="wifiSaveBtn">Change Wi-Fi password</button>
   <div class="status" id="wifiStatus"></div>
+
+  <div class="divider"></div>
+  <h2>Debug · SSH</h2>
+  <div class="wifi-meta" id="clientMeta">Loading...</div>
+  <button class="btn btn-add" id="clientSwitchBtn" disabled>Switch to client mode</button>
+  <div class="status" id="clientStatus"></div>
 </div>
 
 <script>
@@ -647,8 +799,63 @@ document.getElementById('wifiSaveBtn').onclick = async () => {
   }
 };
 
+// ---- Client-mode (SSH) switch ----
+
+async function loadClientMode() {
+  const meta = document.getElementById('clientMeta');
+  const btn = document.getElementById('clientSwitchBtn');
+  try {
+    const w = await fetch('/wifi/client-info').then(r => r.json());
+    meta.textContent = '';
+    if (!w.available) {
+      meta.appendChild(el('span', {text: w.error || 'Not available.'}));
+      btn.disabled = true;
+      return;
+    }
+    meta.appendChild(el('div', {children: [
+      document.createTextNode('Will join: '),
+      el('b', {text: w.ssid}),
+    ]}));
+    meta.appendChild(el('div', {className: 'mono', text: `ssh ${w.ssh_user}@${w.hostname}.local`}));
+    meta.appendChild(el('div', {
+      text: `To recover the hotspot, ssh in and run:  sudo nmcli connection up ${w.ap_name}`,
+      style: 'color:#a06;margin-top:6px;font-size:.8rem',
+    }));
+    btn.disabled = false;
+  } catch (e) {
+    meta.textContent = 'Could not load client-mode info.';
+    btn.disabled = true;
+  }
+}
+
+document.getElementById('clientSwitchBtn').onclick = async () => {
+  const st = document.getElementById('clientStatus');
+  if (!confirm('Switch to client mode? You will lose this page.')) return;
+  const btn = document.getElementById('clientSwitchBtn');
+  btn.disabled = true;
+  showStatus(st, 'busy', 'Switching...');
+  try {
+    const res = await fetch('/wifi/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode: 'client'}),
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showStatus(st, 'ok', d.message);
+    } else {
+      showStatus(st, 'err', d.error || 'Failed.');
+      btn.disabled = false;
+    }
+  } catch (e) {
+    showStatus(st, 'err', 'Request failed.');
+    btn.disabled = false;
+  }
+};
+
 loadTags();
 loadWifi();
+loadClientMode();
 </script>
 </body>
 </html>
