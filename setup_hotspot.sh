@@ -44,9 +44,13 @@ if [ "${#PASSWORD}" -lt 8 ] || [ "${#PASSWORD}" -gt 63 ]; then
 fi
 
 # --- detect network stack -------------------------------------------------
+# `is-active` alone is sufficient — a unit can't be active without being
+# installed. The earlier `systemctl list-unit-files | grep -q ...` form
+# tripped over `set -o pipefail`: grep -q exits on first match, systemctl
+# then takes SIGPIPE (exit 141), pipefail propagates that, and set -e kills
+# the shell before this branch runs.
 USE_NM=0
-if systemctl list-unit-files 2>/dev/null | grep -q '^NetworkManager\.service' \
-    && systemctl is-active --quiet NetworkManager 2>/dev/null; then
+if systemctl is-active --quiet NetworkManager 2>/dev/null; then
     USE_NM=1
 fi
 
@@ -54,12 +58,17 @@ fi
 # The PP4 symbol gaps include 121 and 181 µs values; the default 5 µs sample
 # rate rounds them to 120/180, which some tags refuse to decode. Drop in an
 # override that pins the daemon to -s 1.
-echo "Configuring pigpiod for 1 us sample rate..."
+PIGPIOD_BIN="$(command -v pigpiod || true)"
+if [ -z "${PIGPIOD_BIN}" ]; then
+    echo "pigpiod not found in PATH — install the pigpio daemon first" >&2
+    exit 1
+fi
+echo "Configuring pigpiod (${PIGPIOD_BIN}) for 1 us sample rate..."
 mkdir -p /etc/systemd/system/pigpiod.service.d
-cat > /etc/systemd/system/pigpiod.service.d/override.conf <<'EOF'
+cat > /etc/systemd/system/pigpiod.service.d/override.conf <<EOF
 [Service]
 ExecStart=
-ExecStart=/usr/bin/pigpiod -l -s 1
+ExecStart=${PIGPIOD_BIN} -l -s 1
 EOF
 systemctl daemon-reload
 systemctl enable pigpiod >/dev/null 2>&1 || true
